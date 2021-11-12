@@ -23,7 +23,7 @@ use Dbup\Exception\RuntimeException;
 class Application extends BaseApplication
 {
     const NAME = 'dbup';
-    const VERSION = '0.5';
+    const VERSION = '0.6';
     /** sql file pattern */
     const PATTERN = '/^V(\d+?)__.*\.sql$/i';
     /** @var null PDO  */
@@ -249,24 +249,31 @@ EOL;
         if (false === ($contents = file_get_contents($file->getPathName()))) {
             throw new RuntimeException($file->getPathName() . ' is not found.');
         }
-        $queries = explode(';', $contents);
-        try {
-            $dbh = $this->pdo->connection(true);
-            $dbh->beginTransaction();
-            foreach($queries as $query) {
-                $cleanedQuery = trim($query);
-                if ('' === $cleanedQuery) {
-                    continue;
-                }
-                $stmt = $dbh->prepare($cleanedQuery);
-                $stmt->execute();
+        // Added capability use logical blocks
+        $blocks = explode('-- block', $contents);
+        foreach ($blocks as $block) {
+            // Added capability use multiline SQL statetments. For example for creating/updating procedures
+            $queries = [$block];
+            if (strpos($block, '-- multiline') === false) {
+               $queries = explode(';', $block);
             }
-            $dbh->commit();
-        } catch(\PDOException $e) {
-            $dbh->rollBack();
-            throw new RuntimeException($e->getMessage() . PHP_EOL . $query);
+            try {
+                $dbh = $this->pdo->connection(true);
+                $dbh->beginTransaction();
+                foreach($queries as $query) {
+                    $cleanedQuery = trim($query);
+                    if ('' === $cleanedQuery) {
+                        continue;
+                    }
+                    $stmt = $dbh->prepare($cleanedQuery);
+                    $stmt->execute();
+                }
+                $dbh->commit();
+            } catch(\PDOException $e) {
+                $dbh->rollBack();
+                throw new RuntimeException($e->getMessage() . PHP_EOL . $query);
+            }
         }
-
         $this->copyToAppliedDir($file);
     }
 
